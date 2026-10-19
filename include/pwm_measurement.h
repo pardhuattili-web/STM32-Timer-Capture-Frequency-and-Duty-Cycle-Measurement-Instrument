@@ -1,7 +1,6 @@
 #ifndef PWM_MEASUREMENT_H
 #define PWM_MEASUREMENT_H
 
-#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -27,14 +26,16 @@ typedef struct {
     uint32_t high_ticks;
     uint32_t frequency_hz;
     uint32_t period_ns;
+    /* Duty in permille: 0 = 0%, 1000 = 100%. */
     uint16_t duty_permille;
 } pwm_measurement_t;
 
 /*
- * Convert three monotonically ordered capture timestamps modulo a 32-bit timer
- * into period/high-time measurements. The caller supplies captures for rising,
- * falling, rising edges. The timer must be configured so unsigned subtraction
- * represents the elapsed ticks between captures (period shorter than 2^32 ticks).
+ * Convert rising/falling/rising capture timestamps to a measurement.
+ * Unsigned arithmetic supports a single 32-bit counter wrap when the entire
+ * elapsed period is less than 2^32 ticks. The middle timestamp must be the
+ * falling edge within the measured period. Configure timer polarity/routing
+ * so the supplied captures really have this order.
  */
 pwm_measurement_status_t pwm_measurement_from_captures(
     uint32_t rising_1,
@@ -43,7 +44,7 @@ pwm_measurement_status_t pwm_measurement_from_captures(
     const pwm_measurement_config_t *config,
     pwm_measurement_t *out);
 
-/* Convert a timer tick interval into a rounded frequency in Hz. */
+/* Calculate rounded integer Hz from a nonzero number of timer ticks. */
 pwm_measurement_status_t pwm_frequency_from_ticks(
     uint32_t period_ticks,
     uint32_t timer_clock_hz,
