@@ -1,6 +1,5 @@
 #include "pwm_measurement.h"
 
-#include <limits.h>
 #include <stddef.h>
 
 pwm_measurement_status_t pwm_frequency_from_ticks(
@@ -8,6 +7,8 @@ pwm_measurement_status_t pwm_frequency_from_ticks(
     uint32_t timer_clock_hz,
     uint32_t *frequency_hz)
 {
+    uint64_t rounded;
+
     if (frequency_hz == NULL || timer_clock_hz == 0U) {
         return PWM_MEASUREMENT_INVALID_ARGUMENT;
     }
@@ -15,10 +16,12 @@ pwm_measurement_status_t pwm_frequency_from_ticks(
         return PWM_MEASUREMENT_ZERO_PERIOD;
     }
 
-    /* Rounded integer division without a floating-point dependency. */
-    *frequency_hz = (uint32_t)(((uint64_t)timer_clock_hz +
-                                ((uint64_t)period_ticks / 2U)) /
-                               (uint64_t)period_ticks);
+    rounded = ((uint64_t)timer_clock_hz + ((uint64_t)period_ticks / 2U)) /
+              (uint64_t)period_ticks;
+    if (rounded > UINT32_MAX) {
+        return PWM_MEASUREMENT_OUT_OF_RANGE;
+    }
+    *frequency_hz = (uint32_t)rounded;
     return PWM_MEASUREMENT_OK;
 }
 
@@ -32,6 +35,7 @@ pwm_measurement_status_t pwm_measurement_from_captures(
     uint32_t period;
     uint32_t high;
     uint32_t frequency;
+    uint64_t period_ns;
 
     if (config == NULL || out == NULL || config->timer_clock_hz == 0U ||
         config->min_frequency_hz > config->max_frequency_hz) {
@@ -51,21 +55,23 @@ pwm_measurement_status_t pwm_measurement_from_captures(
 
     if (pwm_frequency_from_ticks(period, config->timer_clock_hz, &frequency) !=
         PWM_MEASUREMENT_OK) {
-        return PWM_MEASUREMENT_INVALID_ARGUMENT;
+        return PWM_MEASUREMENT_OUT_OF_RANGE;
     }
     if (frequency < config->min_frequency_hz ||
         frequency > config->max_frequency_hz) {
         return PWM_MEASUREMENT_OUT_OF_RANGE;
     }
 
+    period_ns = (((uint64_t)period * 1000000000ULL) +
+                 config->timer_clock_hz / 2U) / config->timer_clock_hz;
+    if (period_ns > UINT32_MAX) {
+        return PWM_MEASUREMENT_OUT_OF_RANGE;
+    }
+
     out->period_ticks = period;
     out->high_ticks = high;
     out->frequency_hz = frequency;
-
-    /* Round nanoseconds and duty in permille; use 64-bit intermediates. */
-    out->period_ns = (uint32_t)((((uint64_t)period * 1000000000ULL) +
-                                  config->timer_clock_hz / 2U) /
-                                 config->timer_clock_hz);
+    out->period_ns = (uint32_t)period_ns;
     out->duty_permille = (uint16_t)((((uint64_t)high * 1000ULL) +
                                      period / 2U) /
                                     period);
